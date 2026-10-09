@@ -64,7 +64,8 @@ def main() -> None:
     contain_s = time.perf_counter() - t_pipeline
 
     banner("5. VERIFY (compromised agent retries)")
-    for a in simulator.enforce_and_retry(store):
+    retries = simulator.enforce_and_retry(store)
+    for a in retries:
         print(f"{a['action_type']:<15} {a['dest_host'] or a['target']:<40} -> {a['outcome'].upper()}")
     v = verify(store, inc["agent_id"])
     print(f"contained={v['contained']}  allowed_after={v['allowed_after']}  denied_after={v['denied_after']}")
@@ -91,9 +92,11 @@ def main() -> None:
         "rows": store.scalar("SELECT count() FROM agent_events"),
         "detections": [{"id": r.detection.id, "title": r.detection.title,
                         "severity": r.detection.severity, "ms": round(r.elapsed_ms, 1),
-                        "hits": len(r.hits)} for r in runs],
+                        "hits": len(r.hits), "attack": r.detection.mitre_attack,
+                        "agents": [h["agent_id"] for h in r.hits]} for r in runs],
         "incident": inc, "triage": tri["summary"], "timeline": tri["timeline"],
-        "controls": controls, "verify": v, "guardrail": guard,
+        "controls": controls, "retries": retries, "verify": v, "guardrail": guard,
+        "generated_at": time.strftime("%Y-%m-%d %H:%M"),
         "pipeline_s": round(contain_s, 2),
     }, default=str, indent=1))
     print(f"\nreport written to {REPORT}")

@@ -79,7 +79,10 @@ cp .env.example .env                       # defaults: embedded ClickHouse + moc
 python -m agentwatch.demo --rows 20000000  # full pipeline in the terminal
 streamlit run app.py                       # dashboard
 pytest -q                                  # detection contracts + guardrail tests
+python -m agentwatch.site --repo-url https://github.com/<you>/agentwatch   # static report -> docs/index.html
 ```
+
+**Public report page**: after `python -m agentwatch.site`, commit `docs/index.html`, then in GitHub go to Settings > Pages and serve from the `main` branch, `/docs` folder. The page is self-contained (data embedded), tags every claim as Measured, Simulated or Mock, and includes a browser port of the SQL guardrail you can type into.
 
 **Real LLM** (AkashML, OpenAI, or any OpenAI-compatible endpoint): set `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL` in `.env`.
 
@@ -98,6 +101,8 @@ agentwatch/
   hunt.py        NL-to-SQL hunting with the layered guardrail
   llm.py         OpenAI-compatible client with offline mock
   demo.py        end-to-end run
+  site.py        builds the static report page from reports/latest.json
+site/            report page template
 detections/      AW-001 ... AW-005 (YAML, with tests)
 semgrep/         custom rules + intentionally vulnerable fixture
 docs/            guardrail write-up, read-only ClickHouse user

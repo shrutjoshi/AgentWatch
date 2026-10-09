@@ -6,3 +6,4 @@ data/
 *.chdb/
 reports/
 .venv/
+.DS_Store

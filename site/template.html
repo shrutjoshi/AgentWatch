@@ -1,0 +1,535 @@
+<title>AgentWatch</title>
+<meta name="description" content="Detection, triage and containment for a fleet of AI agents.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,500..800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: an incident console. Summary strip, then the incident (kill chain + response side by side),
+   then the evidence tables, then the live guardrail tester. Reads top-down like an IR report. */
+:root {
+  --bg: #eef0f3;
+  --panel: #ffffff;
+  --ink: #141820;
+  --muted: #5b6372;
+  --line: #d7dbe2;
+  --accent: #2547d0;
+  --accent-soft: #e4e9fb;
+  --crit: #c4251c;
+  --crit-soft: #fbe6e4;
+  --high: #a85d00;
+  --high-soft: #fbefdc;
+  --ok: #17794a;
+  --ok-soft: #dff2e8;
+  --code-bg: #f6f7f9;
+  --mark: #ffe08a;
+  --d1: #2547d0; --d1-soft: #e3e9fd;
+  --d2: #c2185b; --d2-soft: #fce4ef;
+  --d3: #b26a00; --d3-soft: #fdf0d9;
+  --d4: #00897b; --d4-soft: #dcf3f0;
+  --d5: #6a3fc4; --d5-soft: #ece5fb;
+  --hero-a: #10204f; --hero-b: #1f3d9c; --hero-ink: #f3f5ff; --hero-muted: #b9c4ef; --hero-glow: #ff8a3d;
+  --f-display: "Archivo", "Arial Narrow", system-ui, sans-serif;
+  --f-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1218; --panel: #171b23; --ink: #e7eaf0; --muted: #9aa3b2; --line: #2a303b;
+    --accent: #8ea4ff; --accent-soft: #1d2440; --crit: #ff7a6e; --crit-soft: #3a1a18;
+    --high: #f0b25a; --high-soft: #382814; --ok: #5fd39a; --ok-soft: #12301f;
+    --code-bg: #11151c; --mark: #6b5310; color-scheme: dark;
+    --d1: #8ea4ff; --d1-soft: #1c2546; --d2: #ff7eb3; --d2-soft: #3a1828; --d3: #f5b955; --d3-soft: #3a2a12;
+    --d4: #4fd1c1; --d4-soft: #10302c; --d5: #b79cff; --d5-soft: #261d44;
+    --hero-a: #0c1530; --hero-b: #1a2f78; --hero-ink: #f3f5ff; --hero-muted: #aab6e6; --hero-glow: #ff9a52;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1218; --panel: #171b23; --ink: #e7eaf0; --muted: #9aa3b2; --line: #2a303b;
+  --accent: #8ea4ff; --accent-soft: #1d2440; --crit: #ff7a6e; --crit-soft: #3a1a18;
+  --high: #f0b25a; --high-soft: #382814; --ok: #5fd39a; --ok-soft: #12301f;
+  --code-bg: #11151c; --mark: #6b5310; color-scheme: dark;
+    --d1: #8ea4ff; --d1-soft: #1c2546; --d2: #ff7eb3; --d2-soft: #3a1828; --d3: #f5b955; --d3-soft: #3a2a12;
+    --d4: #4fd1c1; --d4-soft: #10302c; --d5: #b79cff; --d5-soft: #261d44;
+    --hero-a: #0c1530; --hero-b: #1a2f78; --hero-ink: #f3f5ff; --hero-muted: #aab6e6; --hero-glow: #ff9a52;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 15px; line-height: 1.5; }
+.wrap { max-width: 1180px; margin: 0 auto; padding-inline: 20px; padding-block: 28px 64px; display: grid; gap: 28px; }
+h1, h2, h3 { font-family: var(--f-display); margin: 0; text-wrap: balance; letter-spacing: -0.01em; }
+h1 { font-size: clamp(32px, 5vw, 46px); font-weight: 800; font-stretch: 78%; line-height: 1; }
+h2 { font-size: 22px; font-weight: 700; font-stretch: 85%; display: inline-flex; align-items: center; gap: 10px; }
+h2::before { content: ""; width: 10px; height: 10px; border-radius: 3px; background: var(--h2c, var(--accent)); }
+#inc-h { --h2c: var(--crit); } #det-h { --h2c: var(--d4); } #g-h { --h2c: var(--d5); }
+h3 { font-size: 15px; font-weight: 700; font-stretch: 90%; }
+.eyebrow { font-family: var(--f-mono); font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+p { margin: 0; }
+.muted { color: var(--muted); }
+code, .mono { font-family: var(--f-mono); font-size: 13px; }
+.num { font-variant-numeric: tabular-nums; }
+
+/* header */
+header { display: grid; gap: 14px; padding: 26px 26px 22px; border-radius: 14px; color: var(--hero-ink);
+  background: radial-gradient(120% 140% at 100% 0%, color-mix(in srgb, var(--hero-glow) 38%, transparent) 0%, transparent 45%),
+              linear-gradient(135deg, var(--hero-a) 0%, var(--hero-b) 100%); }
+header .eyebrow, header .lede, header #run-meta { color: var(--hero-muted); }
+header .tag { background: rgba(255,255,255,.08); }
+header .tag.measured { color: #7ee2ad; } header .tag.simulated { color: #ffc46b; }
+header .tag.mock { color: #c9d1ee; } header .tag.live { color: #a9bbff; }
+header h1 span { color: var(--hero-glow); }
+.head-row { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 16px; }
+.lede { max-width: 66ch; color: var(--muted); font-size: 16px; }
+.legend { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+/* status tags */
+.tag { display: inline-flex; align-items: center; gap: 6px; font-family: var(--f-mono); font-size: 10.5px; font-weight: 500;
+  letter-spacing: .07em; text-transform: uppercase; padding: 3px 7px; border-radius: 4px; border: 1px solid currentColor; white-space: nowrap; }
+.tag::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.tag.measured { color: var(--ok); }
+.tag.simulated { color: var(--high); }
+.tag.mock { color: var(--muted); }
+.tag.live { color: var(--accent); }
+
+/* summary strip */
+.strip { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.stat { padding: 16px 18px; display: grid; gap: 4px; border-left: 1px solid var(--line); min-width: 0; }
+.stat:first-child { border-left: 0; }
+.stat .v { font-family: var(--f-display); font-weight: 700; font-stretch: 80%; font-size: 30px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.stat .v small { font-size: 15px; color: var(--muted); font-weight: 600; margin-left: 2px; }
+.stat .k { font-size: 12.5px; color: var(--muted); }
+.stat.good .v { color: var(--ok); }
+.stat { border-top: 3px solid var(--c, var(--accent)); }
+.stat:nth-child(1) { --c: var(--d1); } .stat:nth-child(2) { --c: var(--d4); } .stat:nth-child(3) { --c: var(--d5); }
+.stat:nth-child(4) { --c: var(--d2); } .stat:nth-child(5) { --c: var(--ok); background: var(--ok-soft); }
+.stat .v { color: var(--c); }
+@media (max-width: 860px) { .strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .stat { border-left: 0; border-top: 1px solid var(--line); } .stat:nth-child(-n+2) { border-top: 0; }
+  .stat:nth-child(2n) { border-left: 1px solid var(--line); } .stat:last-child { grid-column: 1 / -1; border-left: 0; }
+  .stat { border-top-width: 3px; border-top-style: solid; border-top-color: var(--c); } }
+
+/* sections */
+section { display: grid; gap: 14px; }
+.sec-head { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: baseline; justify-content: space-between; }
+.sec-head .left { display: flex; flex-wrap: wrap; gap: 10px; align-items: baseline; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px; min-width: 0; }
+
+/* incident */
+.incident-banner { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; padding: 14px 18px; border-radius: 10px;
+  background: var(--crit-soft); border: 1px solid color-mix(in srgb, var(--crit) 35%, transparent); }
+.sev { font-family: var(--f-mono); font-size: 11px; font-weight: 500; letter-spacing: .08em; text-transform: uppercase;
+  padding: 3px 8px; border-radius: 4px; color: #fff; background: var(--crit); }
+.sev.high { background: var(--high); }
+.incident-banner .agent { font-family: var(--f-display); font-weight: 800; font-stretch: 78%; font-size: 24px; }
+.incident-banner .meta { color: var(--muted); font-size: 13.5px; }
+.grid-2 { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+@media (max-width: 900px) { .grid-2 { grid-template-columns: 1fr; } }
+
+/* kill chain */
+.chain-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+.btn { font: 600 13px var(--f-body); color: #fff; background: linear-gradient(135deg, var(--hero-b), var(--d5)); border: 1px solid transparent;
+  border-radius: 6px; padding: 7px 12px; cursor: pointer; }
+.btn:hover { filter: brightness(1.08); }
+.btn:focus-visible, .chip:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+ol.chain { list-style: none; margin: 0; padding: 0; display: grid; }
+.step { display: grid; grid-template-columns: 74px 22px minmax(0, 1fr); gap: 0 10px; position: relative; padding-bottom: 14px; transition: opacity .25s; }
+.step .t { font-family: var(--f-mono); font-size: 12px; color: var(--muted); padding-top: 2px; text-align: right; font-variant-numeric: tabular-nums; }
+.step .rail { position: relative; display: flex; justify-content: center; }
+.step .rail::after { content: ""; position: absolute; top: 18px; bottom: -14px; width: 2px; background: var(--line); }
+.step:last-child .rail::after { display: none; }
+.dot { width: 12px; height: 12px; margin-top: 5px; border-radius: 50%; background: var(--panel); border: 2px solid var(--muted); z-index: 1; }
+.step.hit .dot { border-color: var(--crit); background: var(--crit); }
+.step.lure .dot { border-color: var(--high); background: var(--high); }
+.step.denied .dot { border-color: var(--ok); background: var(--ok); }
+.step .body { display: grid; gap: 4px; min-width: 0; }
+.step .what { font-weight: 600; }
+.step .detail { font-family: var(--f-mono); font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere; }
+.step .dets { display: flex; flex-wrap: wrap; gap: 6px; }
+.det-chip { font-family: var(--f-mono); font-size: 11px; padding: 1px 6px; border-radius: 4px; background: var(--crit-soft); color: var(--crit); }
+.det-chip.d1 { background: var(--d1-soft); color: var(--d1); } .det-chip.d2 { background: var(--d2-soft); color: var(--d2); }
+.det-chip.d3 { background: var(--d3-soft); color: var(--d3); } .det-chip.d4 { background: var(--d4-soft); color: var(--d4); }
+.det-chip.d5 { background: var(--d5-soft); color: var(--d5); }
+.step.hit .dot { border-color: var(--sc, var(--crit)); background: var(--sc, var(--crit)); }
+.step.c1 { --sc: var(--d1); } .step.c2 { --sc: var(--d2); } .step.c3 { --sc: var(--d3); } .step.c4 { --sc: var(--d4); } .step.c5 { --sc: var(--d5); }
+.step.hit .body, .step.lure .body, .step.denied .body { padding: 8px 10px; border-radius: 8px; background: color-mix(in srgb, var(--sc, var(--crit)) 8%, transparent); }
+.step.lure { --sc: var(--high); } .step.denied { --sc: var(--ok); }
+.det-chip.lure { background: var(--high-soft); color: var(--high); }
+.det-chip.ok { background: var(--ok-soft); color: var(--ok); }
+.chain-divider { font-family: var(--f-mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--ok);
+  padding: 6px 0 14px 106px; }
+.chain.replaying .step { opacity: .25; }
+.chain.replaying .step.on { opacity: 1; }
+@media (max-width: 520px) { .step { grid-template-columns: 58px 18px minmax(0, 1fr); } .chain-divider { padding-left: 86px; } }
+
+/* lure */
+.lure-box { margin-top: 6px; background: var(--code-bg); border: 1px dashed var(--line); border-radius: 8px; padding: 12px 14px;
+  font-family: var(--f-mono); font-size: 12.5px; line-height: 1.6; overflow-wrap: anywhere; }
+mark { background: var(--mark); color: inherit; padding: 0 2px; border-radius: 2px; }
+
+/* response column */
+.stack { display: grid; gap: 18px; min-width: 0; }
+.triage { white-space: pre-wrap; font-size: 13.5px; line-height: 1.6; }
+.triage b { font-family: var(--f-mono); font-size: 11px; letter-spacing: .07em; color: var(--d5); font-weight: 500; }
+.controls { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.controls li { border-left: 3px solid var(--d4) !important; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 12px; align-items: baseline; padding: 10px 12px;
+  border: 1px solid var(--line); border-radius: 8px; }
+.controls .c { font-family: var(--f-mono); font-size: 12.5px; font-weight: 500; }
+.controls .s { font-family: var(--f-mono); font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.controls .r { grid-column: 2; font-size: 12.5px; color: var(--muted); }
+.verdict { display: flex; gap: 12px; align-items: center; padding: 12px 14px; border-radius: 8px; background: var(--ok-soft); color: var(--ok); font-weight: 600; }
+.verdict .big { font-family: var(--f-display); font-stretch: 80%; font-size: 26px; font-weight: 800; }
+.verdict.fail { background: var(--crit-soft); color: var(--crit); }
+
+/* tables */
+.tbl-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+th { text-align: left; font-family: var(--f-mono); font-size: 11px; font-weight: 500; letter-spacing: .07em; text-transform: uppercase;
+  color: var(--muted); padding: 0 12px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+td { padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+tr:last-child td { border-bottom: 0; }
+td.id { font-family: var(--f-mono); font-weight: 500; white-space: nowrap; }
+td.id span { padding: 2px 7px; border-radius: 4px; }
+tbody tr { border-left: 3px solid transparent; }
+.bar .fill.d1 { background: var(--d1); } .bar .fill.d2 { background: var(--d2); } .bar .fill.d3 { background: var(--d3); }
+.bar .fill.d4 { background: var(--d4); } .bar .fill.d5 { background: var(--d5); }
+.bar-cell { min-width: 150px; }
+.bar { display: flex; align-items: center; gap: 8px; }
+.bar .track { flex: 1; height: 6px; background: var(--code-bg); border-radius: 3px; overflow: hidden; min-width: 60px; }
+.bar .fill { height: 100%; background: var(--accent); border-radius: 3px; }
+.bar .ms { font-family: var(--f-mono); font-size: 12px; font-variant-numeric: tabular-nums; min-width: 64px; text-align: right; }
+.ok-txt { color: var(--ok); font-weight: 600; }
+.bad-txt { color: var(--crit); font-weight: 600; }
+
+/* guardrail tester */
+.tester { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; }
+@media (max-width: 900px) { .tester { grid-template-columns: 1fr; } }
+label { font-size: 13px; font-weight: 600; display: block; margin-bottom: 6px; }
+textarea { width: 100%; min-height: 120px; resize: vertical; font-family: var(--f-mono); font-size: 13px; line-height: 1.5;
+  background: var(--code-bg); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.chip { font: 500 12px var(--f-body); border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 999px; padding: 4px 10px; cursor: pointer; }
+.chip:hover { border-color: var(--accent); color: var(--accent); }
+.chip { border-color: color-mix(in srgb, var(--crit) 45%, var(--line)); color: var(--crit); background: var(--crit-soft); }
+.chip.legit { border-style: dashed; border-color: color-mix(in srgb, var(--ok) 50%, var(--line)); color: var(--ok); background: var(--ok-soft); }
+.chip:hover { filter: brightness(.97); }
+.result { display: grid; gap: 10px; align-content: start; }
+.res-box { padding: 14px; border-radius: 8px; display: grid; gap: 4px; }
+.res-box.block { background: var(--crit-soft); color: var(--crit); }
+.res-box.allow { background: var(--ok-soft); color: var(--ok); }
+.res-box .h { font-family: var(--f-display); font-stretch: 85%; font-weight: 700; font-size: 18px; }
+.res-box .why { font-family: var(--f-mono); font-size: 12.5px; color: var(--ink); }
+.layers { display: grid; gap: 6px; font-size: 13px; color: var(--muted); }
+.layers div { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 8px; }
+.layers b { font-family: var(--f-mono); font-size: 12px; color: var(--ink); font-weight: 500; }
+.finding { border-left: 3px solid var(--high); background: linear-gradient(90deg, var(--high-soft), var(--panel) 60%); padding: 2px 0 2px 14px; display: grid; gap: 6px; }
+pre.sql { margin: 0; background: var(--code-bg); border-radius: 6px; padding: 10px 12px; overflow-x: auto; font-family: var(--f-mono); font-size: 12.5px; }
+
+.stack-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; }
+.tech { background: var(--panel); border: 1px solid var(--line); border-top: 4px solid var(--tc); border-radius: 10px; padding: 16px; display: grid; gap: 8px; align-content: start; min-width: 0; }
+.tech .nm { font-family: var(--f-display); font-weight: 800; font-stretch: 82%; font-size: 20px; color: var(--tc); line-height: 1.1; }
+.tech .role { font-family: var(--f-mono); font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); }
+.tech p { font-size: 13.5px; }
+.tech .cfg { font-family: var(--f-mono); font-size: 12px; background: var(--code-bg); border-radius: 6px; padding: 6px 8px; overflow-wrap: anywhere; }
+#stack-h { --h2c: var(--d1); }
+footer { display: grid; gap: 10px; color: var(--muted); font-size: 13.5px; border-top: 1px solid var(--line); padding-top: 20px; }
+footer ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+a { color: var(--accent); }
+@media (prefers-reduced-motion: reduce) { .step { transition: none; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <span class="eyebrow">Incident console · AI agent fleet</span>
+    <div class="head-row">
+      <h1>Agent<span>Watch</span></h1>
+      <div class="legend" aria-label="Status legend">
+        <span class="tag measured" title="Timed or counted on a real run">Measured</span>
+        <span class="tag simulated" title="Synthetic telemetry or simulated control plane">Simulated</span>
+        <span class="tag" id="triage-legend">Mock</span>
+      </div>
+    </div>
+    <p class="lede">A research agent read a poisoned web page, then stole credentials and uploaded them. AgentWatch caught it with five detections over the whole fleet's telemetry, contained the agent, and proved the containment held.</p>
+    <p class="muted mono" id="run-meta"></p>
+  </header>
+
+  <div class="strip" id="strip"></div>
+
+  <section aria-labelledby="inc-h">
+    <div class="sec-head">
+      <div class="left"><h2 id="inc-h">The incident</h2><span class="tag simulated">Simulated attack</span></div>
+    </div>
+    <div class="incident-banner" id="banner"></div>
+    <div class="grid-2">
+      <div class="panel">
+        <div class="chain-head">
+          <h3>Kill chain, as recorded in ClickHouse</h3>
+          <button class="btn" id="replay" type="button">Replay attack</button>
+        </div>
+        <ol class="chain" id="chain"></ol>
+      </div>
+      <div class="stack">
+        <div class="panel">
+          <div class="chain-head"><h3>AI triage</h3><span class="tag" id="triage-tag">Mock</span></div>
+          <div class="triage" id="triage"></div>
+        </div>
+        <div class="panel">
+          <div class="chain-head"><h3>Automated containment</h3><span class="tag simulated">Simulated control plane</span></div>
+          <ul class="controls" id="controls"></ul>
+        </div>
+        <div id="verdict"></div>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="det-h">
+    <div class="sec-head">
+      <div class="left"><h2 id="det-h">Detections</h2><span class="tag measured">Measured</span></div>
+      <span class="muted" id="det-sub"></span>
+    </div>
+    <div class="panel tbl-wrap"><table id="det-table"></table></div>
+  </section>
+
+  <section aria-labelledby="g-h">
+    <div class="sec-head">
+      <div class="left"><h2 id="g-h">Guardrail for LLM-written SQL</h2><span class="tag measured">Tested</span></div>
+    </div>
+    <div class="panel finding">
+      <h3>Finding: query-level readonly is not a security boundary in ClickHouse</h3>
+      <p class="muted">A later SETTINGS clause wins, so a model that appends its own settings undoes the guard. Reproduced on embedded ClickHouse (chDB).</p>
+      <pre class="sql">SELECT count() FROM agent_events SETTINGS readonly = 1, readonly = 0   -- runs
+SELECT * FROM file('/etc/passwd', 'LineAsString') SETTINGS readonly = 2 -- reads a local file</pre>
+    </div>
+    <div class="panel tester">
+      <div>
+        <label for="sql-in">Try SQL a compromised model might write</label>
+        <textarea id="sql-in" spellcheck="false"></textarea>
+        <div class="chips" id="chips"></div>
+      </div>
+      <div class="result">
+        <div id="res" aria-live="polite"></div>
+        <div class="layers">
+          <div><b>L1</b><span>Validate: one SELECT, no comments, no SETTINGS, no table functions, allowlisted tables. Runs here in your browser, ported from <code>hunt.validate_sql</code>.</span></div>
+          <div><b>L2</b><span>Wrap in an outer SELECT with a row limit.</span></div>
+          <div><b>L3</b><span>Execute as a database user whose profile pins <code>readonly = 1 CONST</code>.</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="panel tbl-wrap"><table id="g-table"></table></div>
+  </section>
+
+  <section aria-labelledby="stack-h">
+    <div class="sec-head">
+      <div class="left"><h2 id="stack-h">What it runs on</h2></div>
+      <span class="muted">Swappable by design: storage and the LLM each sit behind one module.</span>
+    </div>
+    <div class="stack-grid" id="stack"></div>
+  </section>
+
+  <footer>
+    <h3>What is real and what is not</h3>
+    <ul>
+      <li>Telemetry and the attack chain are synthetic. The attack is scripted so the demo is reproducible.</li>
+      <li>Detection timings and counts come from a real ClickHouse run over every row.</li>
+      <li>Containment writes controls to a table; a simulator enforces them. Nothing touches real infrastructure.</li>
+      <li>Next: replace the script with a live agent using sandboxed tools and honeytoken credentials.</li>
+    </ul>
+    <p id="credit"></p>
+  </footer>
+</div>
+
+<script id="aw-data" type="application/json">__AW_DATA__</script>
+<script>
+(function () {
+  "use strict";
+  var D = JSON.parse(document.getElementById("aw-data").textContent);
+  var $ = function (id) { return document.getElementById(id); };
+  var esc = function (s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); };
+  var fmtBytes = function (b) { b = Number(b) || 0; return b >= 1e6 ? (b / 1e6).toFixed(1) + " MB" : b >= 1e3 ? (b / 1e3).toFixed(1) + " KB" : b + " B"; };
+  var tod = function (ts) { var m = String(ts).match(/(\d\d:\d\d:\d\d)(\.\d+)?/); return m ? m[1] + (m[2] ? m[2].slice(0, 2) : "") : ts; };
+  var isMock = /^mock/i.test(D.llm || "mock");
+
+  // header
+  $("run-meta").textContent = "Run " + (D.generated_at || "") + " · backend: " + D.backend + " · triage model: " + D.llm;
+  ["triage-legend", "triage-tag"].forEach(function (id) {
+    var el = $(id); el.className = "tag " + (isMock ? "mock" : "live"); el.textContent = isMock ? "Mock triage" : "Live LLM";
+  });
+
+  // summary strip
+  var detMs = D.detections.reduce(function (a, d) { return a + d.ms; }, 0);
+  var victims = {}; D.detections.forEach(function (d) { (d.agents || []).forEach(function (a) { victims[a] = 1; }); });
+  var fp = Object.keys(victims).filter(function (a) { return a !== D.incident.agent_id; }).length;
+  var stats = [
+    [Number(D.rows).toLocaleString("en-US"), "", "events scanned, 500 agents"],
+    [detMs >= 1000 ? (detMs / 1000).toFixed(2) : Math.round(detMs), detMs >= 1000 ? "s" : "ms", D.detections.length + " detections, full table"],
+    [D.pipeline_s, "s", "detection to containment"],
+    [D.detections.filter(function (d) { return d.hits > 0; }).length + " / " + fp, "", "detections fired / false positives"],
+    [D.verify.contained ? "Contained" : "Not contained", "", D.verify.denied_after + " retries denied, " + D.verify.allowed_after + " allowed", D.verify.contained ? "good" : ""]
+  ];
+  $("strip").innerHTML = stats.map(function (s) {
+    return '<div class="stat ' + (s[3] || "") + '"><span class="v">' + esc(s[0]) + (s[1] ? "<small>" + s[1] + "</small>" : "") +
+      '</span><span class="k">' + esc(s[2]) + "</span></div>";
+  }).join("");
+
+  // banner
+  var inc = D.incident;
+  $("banner").innerHTML = '<span class="sev">' + esc(inc.severity) + '</span><span class="agent">' + esc(inc.agent_id) +
+    '</span><span class="meta">research agent · ' + inc.detections.length + " detections · " + esc(tod(inc.first_seen)) +
+    " to " + esc(tod(inc.last_seen)) + " · session " + esc((inc.sessions || [])[0] || "") + "</span>";
+
+  // kill chain
+  var INJ = /(ignore previous instructions|note to ai assistants|ignore all prior|disregard your instructions)/i;
+  var META = ["169.254.169.254", "metadata.google.internal", "metadata.azure.com"];
+  var SECRET = /(\.aws\/credentials|\.ssh\/id_|\.env$|\.kube\/config|\.netrc|\.git-credentials)/;
+  function describe(e) {
+    var dets = [], kind = "", what = "", detail = "";
+    if (e.outcome === "denied") kind = "denied";
+    if (e.action_type === "http_request") {
+      if (e.content_snippet && INJ.test(e.content_snippet)) { what = "Fetched a page with hidden instructions"; kind = kind || "lure"; dets.push(["injection", "lure"]); }
+      else if (META.indexOf(e.dest_host) >= 0) { what = "Called the instance metadata service"; dets.push(["AW-001"]); }
+      else if (Number(e.bytes_out) > 100000) { what = "Uploaded " + fmtBytes(e.bytes_out) + " to " + e.dest_host; dets.push(["AW-002"], ["AW-004"]); }
+      else what = "HTTP request to " + e.dest_host;
+      detail = e.dest_host + e.target;
+    } else if (e.action_type === "file_read") {
+      what = "Read " + e.target; detail = "file_read"; if (SECRET.test(e.target)) dets.push(["AW-003"]);
+    } else if (e.action_type === "credential_use") {
+      what = "Presented a " + e.token_scope + "-scope token"; detail = e.target; if (e.token_scope === "admin") dets.push(["AW-005"]);
+    } else { what = "Tool call: " + (e.tool || "tool"); detail = e.target; }
+    if (e.outcome === "denied") { dets = [["denied", "ok"]]; what = "Retry blocked: " + what.charAt(0).toLowerCase() + what.slice(1); }
+    if (!kind && dets.length) kind = "hit";
+    return { what: what, detail: detail, dets: dets, kind: kind };
+  }
+  var DC = { "AW-001": "d1", "AW-002": "d2", "AW-003": "d3", "AW-004": "d4", "AW-005": "d5" };
+  var events = (D.timeline || []).slice();
+  var retries = (D.retries || []).slice();
+  var lureText = "";
+  function stepHtml(e) {
+    var d = describe(e);
+    if (d.kind === "lure") lureText = e.content_snippet;
+    var first = d.dets.length && DC[d.dets[0][0]] ? " c" + DC[d.dets[0][0]].slice(1) : "";
+    return '<li class="step ' + d.kind + first + '"><span class="t">' + esc(tod(e.ts)) + '</span><span class="rail"><span class="dot"></span></span>' +
+      '<div class="body"><span class="what">' + esc(d.what) + '</span><span class="detail">' + esc(d.detail) + "</span>" +
+      (d.dets.length ? '<span class="dets">' + d.dets.map(function (x) { return '<span class="det-chip ' + (x[1] || DC[x[0]] || "") + '">' + esc(x[0]) + "</span>"; }).join("") + "</span>" : "") +
+      (d.kind === "lure" ? '<div class="lure-box" id="lure"></div>' : "") + "</div></li>";
+  }
+  var html = events.map(stepHtml).join("");
+  if (retries.length) {
+    html += '<li class="chain-divider" aria-hidden="true">Containment applied · agent retries</li>' + retries.map(stepHtml).join("");
+  }
+  $("chain").innerHTML = html;
+  if ($("lure")) $("lure").innerHTML = esc(lureText).replace(INJ, "<mark>$1</mark>");
+
+  // replay
+  var timer = null;
+  $("replay").addEventListener("click", function () {
+    var chain = $("chain"), steps = chain.querySelectorAll(".step"), i = 0;
+    if (timer) { clearInterval(timer); timer = null; }
+    var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    steps.forEach(function (s) { s.classList.remove("on"); });
+    chain.classList.add("replaying");
+    timer = setInterval(function () {
+      if (i >= steps.length) { clearInterval(timer); timer = null; setTimeout(function () { chain.classList.remove("replaying"); }, 600); return; }
+      steps[i].classList.add("on"); i++;
+    }, reduce ? 60 : 650);
+  });
+
+  // triage
+  $("triage").innerHTML = esc(D.triage).replace(/^(WHAT HAPPENED|LIKELY ROOT CAUSE|IMPACT|CONFIDENCE|RECOMMENDED ACTIONS):/gm, "<b>$1</b>\n");
+
+  // containment
+  $("controls").innerHTML = (D.controls || []).map(function (c) {
+    return '<li><span class="c">' + esc(c.control) + '</span><span class="s">' + esc(c.scope === "*" ? "all sessions" : c.scope) +
+      '</span><span class="r">' + esc(c.reason) + "</span></li>";
+  }).join("");
+  var v = D.verify;
+  $("verdict").innerHTML = '<div class="verdict ' + (v.contained ? "" : "fail") + '"><span class="big">' + v.denied_after + "/" +
+    (v.denied_after + v.allowed_after) + "</span><span>" + (v.contained ? "retry attempts denied. Verified by query, not assumed." : "retries got through. Containment failed.") + "</span></div>";
+
+  // detections table
+  var maxMs = Math.max.apply(null, D.detections.map(function (d) { return d.ms; }));
+  $("det-sub").textContent = "Each rule ships with must-fire and must-not-fire test cases.";
+  $("det-table").innerHTML = "<thead><tr><th>ID</th><th>Detects</th><th>Severity</th><th>ATT&amp;CK</th><th>Query time</th><th>Fired on</th></tr></thead><tbody>" +
+    D.detections.map(function (d) {
+      var dc = DC[d.id] || "d1";
+      return '<tr style="border-left-color:var(--' + dc + ')"><td class="id"><span class="det-chip ' + dc + '">' + esc(d.id) + "</span></td><td>" + esc(d.title) + '</td><td><span class="sev ' + (d.severity === "high" ? "high" : "") + '">' +
+        esc(d.severity) + '</span></td><td class="mono">' + esc((d.attack || []).join(", ")) + '</td><td class="bar-cell"><div class="bar"><span class="track"><span class="fill ' + dc + '" style="width:' +
+        Math.max(3, d.ms / maxMs * 100).toFixed(1) + '%"></span></span><span class="ms">' + d.ms.toFixed(1) + ' ms</span></div></td><td class="mono">' +
+        esc((d.agents || []).join(", ") || "none") + "</td></tr>";
+    }).join("") + "</tbody>";
+
+  // guardrail table
+  $("g-table").innerHTML = "<thead><tr><th>Attack</th><th>SQL the model emitted</th><th>Result</th></tr></thead><tbody>" +
+    (D.guardrail || []).map(function (g) {
+      var blocked = /^blocked/i.test(g.outcome);
+      return "<tr><td>" + esc(g.attack) + '</td><td class="mono">' + esc(g.sql) + '</td><td class="' + (blocked ? "ok-txt" : "bad-txt") + '">' + esc(g.outcome) + "</td></tr>";
+    }).join("") + "</tbody>";
+
+  // live validator (port of agentwatch/hunt.py validate_sql)
+  var ALLOWED = ["agent_events", "agent_controls"];
+  var KW = ["insert", "alter", "drop", "create", "truncate", "rename", "attach", "detach", "grant", "revoke", "kill", "system",
+    "optimize", "settings", "outfile", "delete", "update", "exchange", "set", "use"];
+  var TF = ["file", "url", "urlcluster", "s3", "s3cluster", "gcs", "azureblobstorage", "remote", "remotesecure", "cluster",
+    "clusterallreplicas", "mysql", "postgresql", "mongodb", "redis", "sqlite", "jdbc", "odbc", "hdfs", "executable", "input",
+    "dictionary", "merge", "numbers", "deltalake", "iceberg", "hudi", "generaterandom", "loop"];
+  function validate(sql) {
+    sql = sql.trim().replace(/^`+|`+$/g, "").trim().replace(/;\s*$/, "").trim();
+    var bare = sql.replace(/'(?:[^'\\]|\\.)*'/g, "''"), low = bare.toLowerCase();
+    if (!low) return "Empty query";
+    if (/--|\/\*|#/.test(bare)) return "Comments are not allowed";
+    if (bare.indexOf(";") >= 0) return "Multiple statements are not allowed";
+    if (!/^\s*(select|with)\b/.test(low)) return "Only SELECT or WITH queries are allowed";
+    for (var i = 0; i < KW.length; i++) if (new RegExp("\\b" + KW[i] + "\\b").test(low)) return "Forbidden keyword: " + KW[i].toUpperCase();
+    for (var j = 0; j < TF.length; j++) if (new RegExp("\\b" + TF[j] + "\\s*\\(").test(low)) return "Table function not allowed: " + TF[j] + "()";
+    var ctes = [], m, re = /\b([a-z_][a-z0-9_]*)\s+as\s*\(/g;
+    while ((m = re.exec(low))) ctes.push(m[1]);
+    var rf = /\b(?:from|join)\s+([a-z_][a-z0-9_.]*)/g;
+    while ((m = rf.exec(low))) if (ALLOWED.indexOf(m[1]) < 0 && ctes.indexOf(m[1]) < 0) return "Table not in allowlist: " + m[1];
+    return null;
+  }
+  function check() {
+    var why = validate($("sql-in").value);
+    $("res").innerHTML = why
+      ? '<div class="res-box block"><span class="h">Blocked at L1</span><span class="why">' + esc(why) + "</span></div>"
+      : '<div class="res-box allow"><span class="h">Allowed</span><span class="why">Passes L1. Would run wrapped in a LIMIT, as the read-only hunt user.</span></div>';
+  }
+  var samples = (D.guardrail || []).map(function (g) { return [g.attack, g.sql, false]; });
+  samples.push(["legit: admin token use", "SELECT agent_role, agent_id, count() AS n FROM agent_events WHERE token_scope = 'admin' GROUP BY agent_role, agent_id", true]);
+  samples.push(["legit: search for 'drop table' in logs", "SELECT ts, agent_id FROM agent_events WHERE content_snippet LIKE '%drop table%'", true]);
+  $("chips").innerHTML = samples.map(function (s, i) {
+    return '<button type="button" class="chip' + (s[2] ? " legit" : "") + '" data-i="' + i + '">' + esc(s[0]) + "</button>";
+  }).join("");
+  $("chips").addEventListener("click", function (ev) {
+    var b = ev.target.closest(".chip"); if (!b) return;
+    $("sql-in").value = samples[+b.getAttribute("data-i")][1]; check();
+  });
+  $("sql-in").addEventListener("input", check);
+  $("sql-in").value = samples.length ? samples[2] ? samples[2][1] : samples[0][1] : "SELECT 1";
+  check();
+
+  var cloud = D.backend === "server";
+  var tech = [
+    { nm: "ClickHouse", tc: "var(--d3)", role: "Telemetry store and detection engine",
+      p: "Holds every agent event in a MergeTree table. All five detections, correlation, containment checks and hunting run as ClickHouse SQL.",
+      cfg: cloud ? "ClickHouse server / Cloud via clickhouse-connect" : "Embedded ClickHouse (chDB), same SQL as Cloud",
+      tag: ["measured", "Measured"] },
+    { nm: "AkashML", tc: "var(--d2)", role: "Triage and hunting LLM",
+      p: "OpenAI-compatible inference on Akash's decentralized GPU network. Writes the incident summary and turns hunting questions into SQL.",
+      cfg: isMock ? "Not connected in this run: mock triage" : "Model: " + D.llm,
+      tag: isMock ? ["mock", "Mock this run"] : ["live", "Live"] },
+    { nm: "Semgrep", tc: "var(--d4)", role: "Code security",
+      p: "Two custom rules: LLM output reaching a database call without validation, and query-level readonly used as a boundary.",
+      cfg: "semgrep --config semgrep/", tag: ["measured", "Tested"] },
+    { nm: "Python + Streamlit", tc: "var(--d5)", role: "Pipeline and local dashboard",
+      p: "Detection-as-code engine (YAML rules with test cases), simulator, containment, guardrail, and pytest suite of 15 tests.",
+      cfg: "python -m agentwatch.demo", tag: ["measured", "Tested"] },
+    { nm: "Claude", tc: "var(--d1)", role: "Build assistant",
+      p: "Used to scaffold code and this page. Detection design, threat model and review by the author.",
+      cfg: "Anthropic", tag: ["mock", "Disclosed"] }
+  ];
+  $("stack").innerHTML = tech.map(function (t) {
+    return '<div class="tech" style="--tc:' + t.tc + '"><span class="role">' + esc(t.role) + '</span><span class="nm">' + esc(t.nm) +
+      '</span><p>' + esc(t.p) + '</p><span class="cfg">' + esc(t.cfg) + '</span><span><span class="tag ' + t.tag[0] + '">' + esc(t.tag[1]) + "</span></span></div>";
+  }).join("");
+
+  $("credit").innerHTML = 'Built by Shrutika Joshi at the &amp;tokens Cyberdefense Hackathon, Oct 9 2026. ' +
+    (D.repo_url ? '<a href="' + esc(D.repo_url) + '" target="_blank" rel="noopener">Source on GitHub</a>.' : "");
+})();
+</script>
