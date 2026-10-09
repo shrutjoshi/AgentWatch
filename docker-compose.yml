@@ -1,0 +1,12 @@
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    ports: ["8123:8123", "9000:9000"]
+    environment:
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: localdev
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    volumes:
+      - ./docs/hunt_user.sql:/docker-entrypoint-initdb.d/hunt_user.sql:ro
+    ulimits:
+      nofile: { soft: 262144, hard: 262144 }

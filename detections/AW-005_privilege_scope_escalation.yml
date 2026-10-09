@@ -1,0 +1,27 @@
+id: AW-005
+title: Non-infrastructure agent used an admin-scoped credential
+severity: high
+status: experimental
+description: >
+  Only infra agents are expected to hold admin scope. Any other role presenting an admin token
+  means a credential was stolen or a scope was granted that should not exist.
+mitre_attack: [T1078]              # Valid Accounts
+mitre_atlas: []
+response: [revoke_token]
+query: |
+  SELECT
+      agent_id,
+      any(session_id)           AS session_id,
+      min(ts)                   AS first_seen,
+      max(ts)                   AS last_seen,
+      count()                   AS hits,
+      groupUniqArray(concat(agent_role, ' agent used ', target, ' [', token_scope, ']')) AS evidence
+  FROM agent_events
+  WHERE action_type = 'credential_use'
+    AND outcome = 'allowed'
+    AND token_scope = 'admin'
+    AND agent_role != 'infra'
+  GROUP BY agent_id
+tests:
+  must_fire_on: [agent-0135]
+  must_not_fire_on: [agent-0003]

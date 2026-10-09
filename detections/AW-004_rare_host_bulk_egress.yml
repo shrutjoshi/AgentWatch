@@ -1,0 +1,37 @@
+id: AW-004
+title: Bulk upload to a host almost no other agent talks to
+severity: high
+status: experimental
+description: >
+  Fleet-relative anomaly: more than 1 MB sent to a destination contacted by two or fewer agents
+  in the window. Popular sanctioned hosts (S3, GitHub) are excluded by construction, so a large
+  ETL upload does not fire.
+mitre_attack: [T1567, T1048]
+mitre_atlas: []
+response: [block_egress, quarantine_session]
+query: |
+  WITH host_popularity AS
+  (
+      SELECT dest_host, uniqExact(agent_id) AS n_agents
+      FROM agent_events
+      WHERE action_type = 'http_request'
+      GROUP BY dest_host
+  )
+  SELECT
+      e.agent_id                       AS agent_id,
+      any(e.session_id)                AS session_id,
+      min(e.ts)                        AS first_seen,
+      max(e.ts)                        AS last_seen,
+      count()                          AS hits,
+      groupUniqArray(concat(e.dest_host, ' (', toString(h.n_agents), ' agents fleet-wide)')) AS evidence,
+      sum(e.bytes_out)                 AS total_bytes
+  FROM agent_events AS e
+  INNER JOIN host_popularity AS h ON e.dest_host = h.dest_host
+  WHERE e.action_type = 'http_request'
+    AND e.outcome = 'allowed'
+    AND h.n_agents <= 2
+  GROUP BY e.agent_id
+  HAVING total_bytes > 1000000
+tests:
+  must_fire_on: [agent-0135]
+  must_not_fire_on: [agent-0004]

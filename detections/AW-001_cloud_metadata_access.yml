@@ -1,0 +1,27 @@
+id: AW-001
+title: Agent reached the cloud instance metadata service
+severity: critical
+status: experimental
+description: >
+  AI agents have no legitimate reason to call the instance metadata endpoint directly.
+  Reaching it is a classic step for stealing the host's IAM role credentials, and a strong
+  signal that the agent is acting outside its sandbox.
+mitre_attack: [T1552.005]          # Unsecured Credentials: Cloud Instance Metadata API
+mitre_atlas: []                    # fill after verifying against atlas.mitre.org
+response: [revoke_token, quarantine_session]
+query: |
+  SELECT
+      agent_id,
+      any(session_id)            AS session_id,
+      min(ts)                    AS first_seen,
+      max(ts)                    AS last_seen,
+      count()                    AS hits,
+      groupUniqArray(concat(dest_host, target)) AS evidence
+  FROM agent_events
+  WHERE action_type = 'http_request'
+    AND outcome = 'allowed'
+    AND dest_host IN ('169.254.169.254', 'metadata.google.internal', 'metadata.azure.com', 'fd00:ec2::254')
+  GROUP BY agent_id
+tests:
+  must_fire_on: [agent-0135]
+  must_not_fire_on: [agent-0003, agent-0004, agent-0210]

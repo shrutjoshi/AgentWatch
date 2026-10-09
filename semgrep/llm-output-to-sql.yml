@@ -1,0 +1,30 @@
+rules:
+  - id: llm-output-to-database-query
+    mode: taint
+    languages: [python]
+    severity: ERROR
+    message: >
+      LLM output reaches a database call without passing through validate_sql().
+      Model output is attacker-influenceable via prompt injection; treat it as untrusted input.
+    metadata:
+      cwe: "CWE-89: SQL Injection"
+      owasp-llm: "LLM05: Improper Output Handling"
+      references: [docs/guardrails.md]
+    pattern-sources:
+      - pattern: $LLM.chat(...)
+      - pattern: $CLIENT.chat.completions.create(...)
+    pattern-sanitizers:
+      - pattern: validate_sql(...)
+    pattern-sinks:
+      - pattern: $STORE.query(...)
+      - pattern: $STORE.command(...)
+      - pattern: $SESS.execute(...)
+
+  - id: clickhouse-query-level-readonly-only
+    languages: [python]
+    severity: WARNING
+    message: >
+      Appending 'SETTINGS readonly = 1' to a query string is not a security boundary: a later
+      SETTINGS clause in the same query overrides it. Enforce readonly in a user settings
+      profile (readonly = 1 CONST) and reject SETTINGS in untrusted SQL.
+    pattern-regex: SETTINGS\s+readonly\s*=\s*1

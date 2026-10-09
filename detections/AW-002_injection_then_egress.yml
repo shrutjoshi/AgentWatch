@@ -1,0 +1,41 @@
+id: AW-002
+title: Prompt-injection content followed by outbound data transfer
+severity: critical
+status: experimental
+description: >
+  The agent ingested content containing prompt-injection phrasing, then within 10 minutes in
+  the same session sent more than 100 KB to an external host. Either signal alone is noisy
+  (people write about prompt injection; agents upload files). The sequence is not.
+mitre_attack: [T1567]              # Exfiltration Over Web Service
+mitre_atlas: []                    # likely LLM Prompt Injection (indirect); verify ID
+response: [quarantine_session, block_egress]
+query: |
+  WITH injected AS
+  (
+      SELECT session_id, agent_id, min(ts) AS t_injected, any(dest_host) AS source_host
+      FROM agent_events
+      WHERE action_type = 'http_request'
+        AND multiSearchAnyCaseInsensitive(content_snippet,
+              ['ignore previous instructions', 'ignore all prior', 'disregard your instructions',
+               'note to ai assistants', 'you are now in developer mode'])
+      GROUP BY session_id, agent_id
+  )
+  SELECT
+      i.agent_id                    AS agent_id,
+      i.session_id                  AS session_id,
+      min(e.ts)                     AS first_seen,
+      max(e.ts)                     AS last_seen,
+      count()                       AS hits,
+      arrayConcat([concat('injected via ', any(i.source_host))],
+                  groupUniqArray(concat('egress ', e.dest_host, ' ', toString(e.bytes_out), 'B'))) AS evidence
+  FROM agent_events AS e
+  INNER JOIN injected AS i ON e.session_id = i.session_id
+  WHERE e.action_type = 'http_request'
+    AND e.outcome = 'allowed'
+    AND e.ts > i.t_injected
+    AND e.ts <= i.t_injected + INTERVAL 10 MINUTE
+    AND e.bytes_out > 100000
+  GROUP BY i.agent_id, i.session_id
+tests:
+  must_fire_on: [agent-0135]
+  must_not_fire_on: [agent-0210]
