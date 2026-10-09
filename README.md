@@ -40,14 +40,14 @@ AW-002 and AW-004 are the interesting ones. Each half of AW-002 is noisy alone (
 
 Each detection file carries `must_fire_on` / `must_not_fire_on` cases that `pytest` enforces.
 
-## Results (embedded chDB, 2-vCPU sandbox)
+## Results (embedded ClickHouse via chDB, MacBook Pro)
 
 | Metric | Value |
 |---|---|
 | Events | ~20,000,000 |
-| Background load | ~25 s (generated inside ClickHouse via `INSERT ... SELECT FROM numbers()`) |
-| All 5 detections, full-table scan | ~3.0 s total (AW-001 ~190 ms, AW-005 ~165 ms) |
-| Detection to verified containment | ~3.3 s |
+| Background load | ~10 s (generated inside ClickHouse via `INSERT ... SELECT FROM numbers()`) |
+| All 5 detections, full-table scan | ~1.2 s total (AW-005 74 ms, AW-004 132 ms, AW-001 165 ms) |
+| Detection to verified containment | ~1.3 s |
 | True positives / false positives | 5 / 0 |
 
 Measure your own run; numbers on ClickHouse Cloud or a laptop will differ.
